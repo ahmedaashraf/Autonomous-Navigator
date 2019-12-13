@@ -61,7 +61,7 @@
 #define ADJUST_POSITION 4
 #define GREET_HUMAN 5
 #define FW_NOTTRUE 6
-#define TARGET 7
+#define RAMPSTATE 7
 
 /* USER CODE END Includes */
 
@@ -81,6 +81,8 @@ osThreadId StateMachineHandle;
 	uint8_t AdjustLeft[] = {0xCA, 0x27, 0xC2 , 0x20};
 	uint8_t Turnleft[] = {0xCA,0x20,0xC1,0x20};
 	uint8_t Turnright[] = {0xC2,0x20,0xC9,0x20};
+	uint8_t test[] = {0xCA,0x25,0xC2,0x25};
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -111,6 +113,7 @@ int fputc(int ch,FILE *f)
 	static int DistanceCounter = 0;
 	int state = INIT_STATE;
 	static int InitAngle;
+	int Global_Counter =0;
 
 
 	int abs(int a)
@@ -158,6 +161,29 @@ int fputc(int ch,FILE *f)
 	}
 		
 		
+	void MoveForwardE(void)
+	{
+		if((angle-InitAngle) < 0)
+		{
+			test[1] = 0x22;
+			test[3] = 0x30;
+		}
+		else if((angle-InitAngle) > 0)
+		{
+			test[1] = 0x30;
+			test[3] = 0x22;
+		}
+		else
+		{
+			test[1] = 0x30;
+			test[3] = 0x30;
+		}
+		
+		HAL_UART_Transmit(&huart1,test,sizeof(test),250);
+		printf("Current speed : %i , %i \r\n", test[1],test[3]);
+
+	}
+	
 	int Read(void)
 	{
 		int count =0;
@@ -204,11 +230,11 @@ int fputc(int ch,FILE *f)
 		 return angle - s;
 	}
 
-	int AdjustAngle(int tem1)
+	void AdjustAngle(int tem1)
 	{
 		while(1)
 		{
-			printf("Angle : %i , LowerRange:  %i, UpperRange: %i \n", angle, tem1-2, tem1+2);
+			printf("Angle : %i , LowerRange:  %i, UpperRange: %i \r\n", angle, tem1-2, tem1+2);
 			if((angle > tem1-3) && ( angle < tem1 + 3))
 			{
 					Stop();
@@ -216,28 +242,8 @@ int fputc(int ch,FILE *f)
 					break;
 			}
 		}
-			
 	}
-	
-  void Adjust(void)
-	{
-					printf("AdjustPosition Function");
-					if((angle - InitAngle) < 0)
-						AdjustingRight();
-					else
-						AdjustingLeft();
-					
-					while(1)
-					{
-						printf("Angle : %i , LowerRange:  %i, UpperRange: %i \n", angle, InitAngle-2, InitAngle+2);
-						if((angle >= InitAngle - 1) && (angle <= InitAngle + 1))
-						{
-							Stop();
-							break;
-						}
-					}
-	}
-	
+
 /* USER CODE END 0 */
 
 /**
@@ -506,49 +512,41 @@ static void MX_GPIO_Init(void)
 /* USER CODE END Header_FSM */
 void FSM(void const * argument)
 {
-	int adjustcounter = 0;
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
 	//MoveForward();
   for(;;)
-  {
+  { 
+	
 			switch(state)
 			{	
 				case INIT_STATE:
 					while(!flag_got_it)
-					{printf("FLAG_GOT_IT %i \n",flag_got_it);}
-				//	printf("INIT");
+					{printf("FLAG_GOT_IT %i \r\n",flag_got_it);}
           InitAngle = angle;
-					printf("InitAngle : %i \n", InitAngle);
+					printf("InitAngle : %i \r\n", InitAngle);
 					state = FW_STATE;
 					break;
 				
 				
 				case FW_STATE:
-					printf("FW\n");
+					printf("FW\r\n");
 					write();
 					distance  = Read();
-					printf("Distance FW : %i\n", distance);
+					printf("Distance FW : %i\r\n", distance);
 					if (distance >= 4)
 					{
-					
-						if((angle >= InitAngle - 6) && (angle <= InitAngle + 6))		
+						printf("Error Val = %i \r\n",(angle-InitAngle));
+						MoveForwardE();
+						printf("IN FW Distance Moved %i:\r\n", DistanceCounter);
+						DistanceCounter++;
+						if(DistanceCounter >= 3750)
 							{
-								printf("IN FW %i:\n", DistanceCounter);
-								MoveForward();
-								DistanceCounter++;
-								// VALUE 3400
-								if(DistanceCounter >= 1000)
-								{state = TARGET;}
-								state = FW_STATE;
+								state = RAMPSTATE;
+								break;
 							}
-						else
-						{
-							Stop();
-							osDelay(300);
-							Adjust();
-							state = FW_STATE;
-						}
+						if(DistanceCounter%1500 == 0)
+							InitAngle += 2;
 					}
 					else 
 					{
@@ -560,16 +558,16 @@ void FSM(void const * argument)
 				
 				
 				case CHECKRIGHT:
-						printf("CHEKCRIGHT");
+						printf("CHEKCRIGHT \r\n");
 						write();
 						distanceR = Read_sensorR();
-						printf("Distance R %i", distanceR);
+						printf("Distance R %i \r\n", distanceR);
 
 						if (distanceR < 4) // Right side is blocked
 									state = CHECKLEFT;
 						else if( distanceR >= 4)
 						{
-							printf("Distance R %i", distanceR);
+							printf("Distance R %i \r\n", distanceR);
 							int tem1 = (angle + 60) %360;
 							MoveRight();
 							AdjustAngle(tem1);
@@ -583,7 +581,7 @@ void FSM(void const * argument)
 				break;
 					
 				case CHECKLEFT:
-						printf("CHECKLEFT");
+						printf("CHECKLEFT \r\n");
 						write();
 						distanceL = Read_sensorL();
 						if (distanceL < 4) // Right side is blocked
@@ -602,10 +600,11 @@ void FSM(void const * argument)
 				break;
 				
 				case FW_NOTTRUE:
-					printf("FWNOTTRUE");
+					Global_Counter = 0;
+					printf("FWNOTTRUE \r\n");
 					write();
 					distance = Read();
-					printf("Distance FWNOTTRUE : %i", distance);
+					printf("Distance FWNOTTRUE : %i \r\n", distance);
 					if(distance >= 4)
 					{
 						MoveForward();
@@ -619,12 +618,12 @@ void FSM(void const * argument)
 						}
 					break;
 						
-				case TARGET:
+				case RAMPSTATE:
 					Stop();
 					break;
 				
 				default:
-					printf("default \n");
+					printf("default \r\n");
 					state = FW_STATE;
 				break;
 			}
@@ -682,7 +681,7 @@ void assert_failed(uint8_t* file, uint32_t line)
 { 
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
-     tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+     tex: printf("Wrong parameters value: file %s on line %d\r\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
